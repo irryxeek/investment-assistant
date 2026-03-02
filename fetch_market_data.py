@@ -62,13 +62,14 @@ HOLDINGS = {
         'type': 'index',
         'hist_code': 'HSTECH'  # 用 akshare
     },
-    '港股通创新药指数': {
-        'code': '931250',
-        'sina_code': '931250',
-        'market': 'index_csindex',
-        'type': 'index',
-        'hist_code': '931250',
-        'note': '中证港股通创新药指数'
+    '港股通创新药ETF': {
+        'code': 'sh513120',
+        'sina_code': 'sh513120',
+        'market': 'a_sina',
+        'type': 'etf',
+        'hist_code': 'sh513120',
+        'index_code': '931250',
+        'note': '中证港股通创新药指数ETF'
     },
 }
 

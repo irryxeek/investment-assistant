@@ -1,9 +1,9 @@
 #!/bin/bash
-cd /Users/placebo/Projects/investment-assistant
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
 
 # 先抓取最新行情数据
-source venv/bin/activate
-python fetch_market_data.py
+"$SCRIPT_DIR/venv/bin/python3" fetch_market_data.py || { echo "行情数据抓取失败，请检查网络或脚本"; exit 1; }
 
 PROMPT="请根据以下数据分析我的持仓表现，并给出具体操作建议：
 
@@ -28,4 +28,4 @@ $(cat market_data.json)
 
 请直接给出结论和操作建议，不需要解释基础概念。"
 
-claude -p "/driven $PROMPT"
+claude --model claude-sonnet-4-6 -p "/driven $PROMPT"
