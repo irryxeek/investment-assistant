@@ -289,6 +289,67 @@ def calc_technical_indicators(df):
         return {}
 
 
+def parse_holding_md():
+    """解析 holding.md 获取持仓成本和资产"""
+    holding_file = os.path.join(os.path.dirname(__file__), 'holding.md')
+    if not os.path.exists(holding_file):
+        return {}
+
+    holdings = {}
+    with open(holding_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            # 跳过表头和分隔线
+            if line.startswith('|') and '---' not in line and '标的' not in line:
+                parts = [p.strip() for p in line.split('|')[1:-1]]
+                if len(parts) >= 5:
+                    name = parts[0]
+                    asset_str = parts[3].replace(',', '').replace('+', '')
+                    cost_str = parts[4].replace(',', '').replace('+', '')
+
+                    try:
+                        asset = float(asset_str)
+                        cost = float(cost_str)
+                        holdings[name] = {
+                            'asset': asset,
+                            'cost': cost
+                        }
+                    except:
+                        pass
+
+    return holdings
+
+
+def calculate_daily_change(name, current_cost, current_value, existing_data):
+    """计算今日涨跌，排除资金流入/流出"""
+    if not existing_data:
+        return {}
+
+    # 获取昨日数据
+    last_record = existing_data[-1]
+    yesterday_holdings = {h['名称']: h for h in last_record.get('holdings', [])}
+
+    if name not in yesterday_holdings:
+        return {}
+
+    yesterday = yesterday_holdings[name]
+    yesterday_cost = yesterday.get('持仓成本', 0)
+    yesterday_value = yesterday.get('当前市值', 0)
+
+    # 计算今日净流入（成本变化）
+    net_inflow = current_cost - yesterday_cost
+
+    # 计算今日涨跌（排除净流入）
+    daily_change = (current_value - yesterday_value) - net_inflow
+    daily_change_pct = (daily_change / yesterday_value * 100) if yesterday_value else 0
+
+    return {
+        '昨日市值': round(yesterday_value, 2),
+        '今日净流入': round(net_inflow, 2),
+        '今日涨跌额': round(daily_change, 2),
+        '今日涨跌幅': round(daily_change_pct, 2)
+    }
+
+
 def get_market_overview():
     """获取大盘概览"""
     overview = {}
@@ -338,6 +399,19 @@ def main():
         sign = '+' if data['涨跌幅'] >= 0 else ''
         print(f"  {name}: {data['价格']:.2f} ({sign}{data['涨跌幅']}%)")
 
+    # 读取持仓成本
+    holding_costs = parse_holding_md()
+
+    # 读取现有数据用于计算今日涨跌
+    json_path = os.path.join(os.path.dirname(__file__), 'market_data.json')
+    existing = []
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                existing = json.load(f)
+        except:
+            existing = []
+
     # 持仓详情
     print("\n【持仓详情】")
     print("-" * 70)
@@ -375,6 +449,29 @@ def main():
             **quote,
             **tech
         }
+
+        # 添加成本和收益数据
+        if name in holding_costs:
+            cost_data = holding_costs[name]
+            cost = cost_data['cost']
+            # 用持有资产反推份额
+            units = cost_data['asset'] / quote['最新价'] if quote['最新价'] else 0
+            current_value = units * quote['最新价']
+            profit = current_value - cost
+            profit_pct = (current_value / cost - 1) * 100 if cost else 0
+
+            result.update({
+                '持仓成本': round(cost, 2),
+                '持有份额': round(units, 2),
+                '当前市值': round(current_value, 2),
+                '浮动盈亏': round(profit, 2),
+                '收益率': round(profit_pct, 2)
+            })
+
+            # 计算今日涨跌
+            daily_change = calculate_daily_change(name, cost, current_value, existing)
+            result.update(daily_change)
+
         results.append(result)
 
         # 打印详情
