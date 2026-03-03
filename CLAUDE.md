@@ -1,45 +1,66 @@
 # Project Instructions
 
 ## 项目概述
-智能投资助手：自动抓取行情数据 → 技术分析 → Claude AI 生成调仓建议
+智能投资助手：手动更新持仓数据 → 参考市场行情 → Claude AI 生成调仓建议
 
 ## 权限设置
 - 在此目录下的所有操作无需确认，直接执行
 
 ## 环境
 - Python 虚拟环境: `venv/bin/python3`（直接用绝对路径，不依赖 activate）
-- 金融数据: akshare + 新浪实时行情 API + 中证指数官网 API
+- 金融数据: akshare + 新浪实时行情 API（仅供参考）
 - AI 模型: claude-sonnet-4-6
 
 ## 项目结构
 ```
-├── fetch_market_data.py   # 行情数据抓取 + 技术指标计算
-├── analyze.sh             # 工作流调度（抓数据 → 构建 prompt → 调用 Claude）
-├── holding.md             # 持仓清单（手动维护）
+├── update_holding.py      # 手动更新持仓数据工具（主要）
+├── holding_input.txt      # 持仓数据输入文件（从支付宝复制）
+├── fetch_market_data.py   # 市场行情抓取（仅供参考，不更新持仓）
+├── analyze.sh             # 工作流调度（更新持仓 → 调用 Claude 分析）
+├── holding.md             # 持仓清单（由 update_holding.py 自动生成）
 ├── trade_history.md       # 投资操作记录（手动维护）
-├── analyze_prompt.md      # 分析提示词模板
-├── market_data.json       # 行情数据（自动生成，保留最近30天）
+├── market_data.json       # 市场行情数据（自动生成，保留最近30天）
 ├── latest_summary.md      # 最新行情摘要（自动生成）
-├── analysis_report.txt    # 分析报告（累积存储）
 └── Analyze.app (桌面)     # macOS 快捷启动入口
 ```
 
-## 持仓标的
-| 标的 | 代码 | 数据源 |
-|------|------|--------|
-| 黄金ETF | sh518880 | 新浪实时 |
-| 中证A500 | sh000510 | 新浪实时 |
-| 红利低波50ETF | sh515450 | 新浪实时 |
-| 恒生科技指数 | HSTECH | AKShare |
-| 港股通创新药ETF | sh513120 | 新浪实时 |
+## 实际持仓（联接基金）
+| 标的 | 代码 | 类型 |
+|------|------|------|
+| 易方达恒生科技 ETF 联接 (QDII) C | 007373 | 场外基金 |
+| 景顺长城中证港股通创新药 ETF 联接 C | 014424 | 场外基金 |
+| 富国中证 A500 指数增强 C | 021163 | 场外基金 |
+| 南方红利低波 50ETF 联接 A | 008736 | 场外基金 |
+| 国泰黄金 ETF 联接 C | 004253 | 场外基金 |
+| 现金 | CASH | 现金 |
 
 ## 工作流程
-1. `fetch_market_data.py` 抓取实时行情 + 计算技术指标（MA/RSI/MACD/区间位置）
-2. `analyze.sh` 组装 holding.md + market_data.json + trade_history.md 为完整 prompt
-3. 调用 Claude Sonnet 4.6 通过 `/driven` skill 生成分析报告
+1. **手动更新持仓**：从支付宝/天天基金复制数据到 `holding_input.txt`
+2. **运行更新脚本**：`venv/bin/python3 update_holding.py`（输入现金余额）
+3. **参考市场行情**：`fetch_market_data.py` 抓取 ETF 行情作为趋势参考
+4. **AI 分析**：`analyze.sh` 或双击 `Analyze.app`，调用 `/driven` skill 生成报告
+
+## 数据更新说明
+### 为什么使用手动更新？
+- 实际持有**联接基金**（场外，每日一个净值）
+- `fetch_market_data.py` 抓取的是**ETF**（场内，实时价格）
+- 两者是不同产品，价格/净值更新机制不同
+- 联接基金净值需从基金平台获取，无稳定 API
+
+### 手动更新步骤
+1. 打开支付宝/天天基金，复制持仓数据
+2. 粘贴到 `holding_input.txt`，格式：
+   ```
+   基金名称,持有金额 (元),持仓收益 (元),昨日收益 (元)
+   易方达恒生科技 ETF 联接 (QDII) C,"7,485.33",-725.37,-184.97
+   ```
+3. 运行 `venv/bin/python3 update_holding.py`
+4. 输入现金余额（如 800）
+5. 自动生成 `holding.md`
 
 ## 注意事项
+- **重要**：`holding.md` 由 `update_holding.py` 生成，不要手动编辑
+- **重要**：`fetch_market_data.py` 仅抓取市场行情参考，不会更新 `holding.md`
+- `/driven` skill 必须作为命令行参数：`claude /driven <<EOF`（不能放在 heredoc 内）
 - 新浪 API 需禁用系统代理（脚本已处理）
-- 中证指数官网 API 盘中不提供当日数据，港股通创新药已改用 ETF 实时行情
-- 定时任务建议在 14:40（收盘前）运行
-- 修改持仓后需同步更新 `holding.md` 和 `fetch_market_data.py` 中的 HOLDINGS 配置
+- 建议每日收盘后（15:00+）更新持仓数据
