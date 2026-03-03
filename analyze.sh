@@ -2,7 +2,12 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 先抓取最新行情数据
+# 提示：现在使用手动更新持仓数据，不再自动抓取 ETF 数据
+# 请先运行: venv/bin/python3 update_holding.py
+echo "提示: 请确保已运行 update_holding.py 更新持仓数据"
+echo ""
+
+# 先抓取大盘行情数据（仅供参考）
 "$SCRIPT_DIR/venv/bin/python3" fetch_market_data.py || { echo "行情数据抓取失败，请检查网络或脚本"; exit 1; }
 
 # 每天只保留最新一条记录，保留多天数据用于趋势分析
@@ -34,9 +39,6 @@ claude --model claude-sonnet-4-6 <<'EOF'
 
 ## 我的持仓
 $(cat holding.md)
-
-## 可用资金
-现金约 1800 元
 
 ## 历史操作
 $(cat trade_history.md)

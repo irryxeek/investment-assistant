@@ -561,8 +561,69 @@ def main():
                 f.write(f"- **{r['名称']}**: {', '.join(signals)}\n")
 
     print(f"分析摘要已保存到 {summary_path}")
+
+    # 更新 holding.md
+    update_holding_md(results)
+
     print("\n可以使用以下命令让 Claude 分析:")
     print(f"  claude -p \"$(cat {summary_path}) 请分析今日持仓表现和调仓建议\"")
+
+
+def update_holding_md(results):
+    """收盘后更新 holding.md"""
+    holding_file = os.path.join(os.path.dirname(__file__), 'holding.md')
+
+    # 计算汇总数据
+    total_asset = sum(r.get('当前市值', 0) for r in results)
+    total_cost = sum(r.get('持仓成本', 0) for r in results)
+    total_profit = total_asset - total_cost
+    total_profit_pct = (total_profit / total_cost * 100) if total_cost else 0
+
+    with open(holding_file, 'w', encoding='utf-8') as f:
+        f.write("# 持仓清单\n\n")
+        f.write("| 标的 | 代码 | 类型 | 持有资产 | 持仓成本 | 持有收益 | 收益率 |\n")
+        f.write("|------|------|------|----------|----------|----------|--------|\n")
+
+        for r in results:
+            name = r['名称']
+            code = r['代码']
+            asset = r.get('当前市值', 0)
+            cost = r.get('持仓成本', 0)
+            profit = r.get('浮动盈亏', 0)
+            profit_pct = r.get('收益率', 0)
+
+            # 确定类型
+            holding_type = HOLDINGS[name].get('type', 'unknown')
+            type_map = {'etf': 'ETF', 'index': '指数', 'stock': '股票', 'fund': '基金'}
+            type_name = type_map.get(holding_type, holding_type.upper())
+
+            # 格式化代码
+            if code.startswith('sh'):
+                code_display = code[2:] + '.SH'
+            elif code.startswith('sz'):
+                code_display = code[2:] + '.SZ'
+            else:
+                code_display = code
+
+            # 格式化数字
+            asset_str = f"{asset:,.2f}"
+            cost_str = f"{cost:,.2f}"
+            profit_sign = '+' if profit >= 0 else ''
+            profit_str = f"{profit_sign}{profit:.2f}"
+            profit_pct_sign = '+' if profit_pct >= 0 else ''
+            profit_pct_str = f"{profit_pct_sign}{profit_pct:.2f}%"
+
+            f.write(f"| {name} | {code_display} | {type_name} | {asset_str} | {cost_str} | {profit_str} | {profit_pct_str} |\n")
+
+        f.write("\n## 汇总\n\n")
+        f.write(f"- 总资产: {total_asset:,.2f} 元\n")
+        f.write(f"- 总成本: {total_cost:,.2f} 元\n")
+        profit_sign = '+' if total_profit >= 0 else ''
+        f.write(f"- 总收益: {profit_sign}{total_profit:.2f} 元\n")
+        profit_pct_sign = '+' if total_profit_pct >= 0 else ''
+        f.write(f"- 总收益率: {profit_pct_sign}{total_profit_pct:.2f}%\n")
+
+    print(f"持仓清单已更新到 {holding_file}")
 
 
 if __name__ == '__main__':
