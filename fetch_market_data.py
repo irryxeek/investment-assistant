@@ -562,8 +562,7 @@ def main():
 
     print(f"分析摘要已保存到 {summary_path}")
 
-    # 更新 holding.md
-    update_holding_md(results)
+    # 注意：holding.md 现在通过 update_holding.py 手动更新，不再自动更新
 
     print("\n可以使用以下命令让 Claude 分析:")
     print(f"  claude -p \"$(cat {summary_path}) 请分析今日持仓表现和调仓建议\"")

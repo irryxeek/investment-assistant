@@ -32,9 +32,7 @@ with open('market_data.json', 'w') as f:
     json.dump(result, f, ensure_ascii=False, indent=2)
 "
 
-claude --model claude-sonnet-4-6 <<'EOF'
-/driven
-
+claude --model claude-sonnet-4-6 /driven <<'EOF'
 请根据以下数据分析我的持仓表现，并给出具体操作建议：
 
 ## 我的持仓
