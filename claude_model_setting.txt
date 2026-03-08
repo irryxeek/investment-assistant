@@ -1,0 +1,12 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "cr_0c37d2138e63a09942f3830cb41523a2a72e381b7e3759c6e443896fe96fcc21",
+    "ANTHROPIC_BASE_URL": "https://cursor.scihub.edu.kg/api",
+"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "model": "claude-sonnet-4-6",
+  "permissions": {
+    "allow": [],
+    "deny": []
+  }
+}

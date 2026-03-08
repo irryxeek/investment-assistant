@@ -289,67 +289,6 @@ def calc_technical_indicators(df):
         return {}
 
 
-def parse_holding_md():
-    """解析 holding.md 获取持仓成本和资产"""
-    holding_file = os.path.join(os.path.dirname(__file__), 'holding.md')
-    if not os.path.exists(holding_file):
-        return {}
-
-    holdings = {}
-    with open(holding_file, 'r', encoding='utf-8') as f:
-        for line in f:
-            # 跳过表头和分隔线
-            if line.startswith('|') and '---' not in line and '标的' not in line:
-                parts = [p.strip() for p in line.split('|')[1:-1]]
-                if len(parts) >= 5:
-                    name = parts[0]
-                    asset_str = parts[3].replace(',', '').replace('+', '')
-                    cost_str = parts[4].replace(',', '').replace('+', '')
-
-                    try:
-                        asset = float(asset_str)
-                        cost = float(cost_str)
-                        holdings[name] = {
-                            'asset': asset,
-                            'cost': cost
-                        }
-                    except:
-                        pass
-
-    return holdings
-
-
-def calculate_daily_change(name, current_cost, current_value, existing_data):
-    """计算今日涨跌，排除资金流入/流出"""
-    if not existing_data:
-        return {}
-
-    # 获取昨日数据
-    last_record = existing_data[-1]
-    yesterday_holdings = {h['名称']: h for h in last_record.get('holdings', [])}
-
-    if name not in yesterday_holdings:
-        return {}
-
-    yesterday = yesterday_holdings[name]
-    yesterday_cost = yesterday.get('持仓成本', 0)
-    yesterday_value = yesterday.get('当前市值', 0)
-
-    # 计算今日净流入（成本变化）
-    net_inflow = current_cost - yesterday_cost
-
-    # 计算今日涨跌（排除净流入）
-    daily_change = (current_value - yesterday_value) - net_inflow
-    daily_change_pct = (daily_change / yesterday_value * 100) if yesterday_value else 0
-
-    return {
-        '昨日市值': round(yesterday_value, 2),
-        '今日净流入': round(net_inflow, 2),
-        '今日涨跌额': round(daily_change, 2),
-        '今日涨跌幅': round(daily_change_pct, 2)
-    }
-
-
 def get_market_overview():
     """获取大盘概览"""
     overview = {}
@@ -399,19 +338,6 @@ def main():
         sign = '+' if data['涨跌幅'] >= 0 else ''
         print(f"  {name}: {data['价格']:.2f} ({sign}{data['涨跌幅']}%)")
 
-    # 读取持仓成本
-    holding_costs = parse_holding_md()
-
-    # 读取现有数据用于计算今日涨跌
-    json_path = os.path.join(os.path.dirname(__file__), 'market_data.json')
-    existing = []
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, 'r', encoding='utf-8') as f:
-                existing = json.load(f)
-        except:
-            existing = []
-
     # 持仓详情
     print("\n【持仓详情】")
     print("-" * 70)
@@ -450,28 +376,6 @@ def main():
             **tech
         }
 
-        # 添加成本和收益数据
-        if name in holding_costs:
-            cost_data = holding_costs[name]
-            cost = cost_data['cost']
-            # 用持有资产反推份额
-            units = cost_data['asset'] / quote['最新价'] if quote['最新价'] else 0
-            current_value = units * quote['最新价']
-            profit = current_value - cost
-            profit_pct = (current_value / cost - 1) * 100 if cost else 0
-
-            result.update({
-                '持仓成本': round(cost, 2),
-                '持有份额': round(units, 2),
-                '当前市值': round(current_value, 2),
-                '浮动盈亏': round(profit, 2),
-                '收益率': round(profit_pct, 2)
-            })
-
-            # 计算今日涨跌
-            daily_change = calculate_daily_change(name, cost, current_value, existing)
-            result.update(daily_change)
-
         results.append(result)
 
         # 打印详情
@@ -508,8 +412,29 @@ def main():
             'holdings': results
         })
 
-        # 只保留最近30天数据
-        existing = existing[-30:]
+        # 清理历史数据：非当日数据只保留每天最后一条
+        today = now.date()
+        cleaned = []
+        daily_records = {}
+
+        for record in existing:
+            record_time = datetime.strptime(record['timestamp'], '%Y-%m-%d %H:%M:%S')
+            record_date = record_time.date()
+
+            # 当日数据全部保留
+            if record_date == today:
+                cleaned.append(record)
+            else:
+                # 非当日数据：只保留每天最后一条（收盘数据）
+                if record_date not in daily_records or record_time > datetime.strptime(daily_records[record_date]['timestamp'], '%Y-%m-%d %H:%M:%S'):
+                    daily_records[record_date] = record
+
+        # 合并历史数据（按日期排序）
+        for date in sorted(daily_records.keys()):
+            cleaned.insert(0, daily_records[date])
+
+        # 只保留最近30天
+        existing = cleaned[-30:]
 
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
@@ -566,63 +491,6 @@ def main():
 
     print("\n可以使用以下命令让 Claude 分析:")
     print(f"  claude -p \"$(cat {summary_path}) 请分析今日持仓表现和调仓建议\"")
-
-
-def update_holding_md(results):
-    """收盘后更新 holding.md"""
-    holding_file = os.path.join(os.path.dirname(__file__), 'holding.md')
-
-    # 计算汇总数据
-    total_asset = sum(r.get('当前市值', 0) for r in results)
-    total_cost = sum(r.get('持仓成本', 0) for r in results)
-    total_profit = total_asset - total_cost
-    total_profit_pct = (total_profit / total_cost * 100) if total_cost else 0
-
-    with open(holding_file, 'w', encoding='utf-8') as f:
-        f.write("# 持仓清单\n\n")
-        f.write("| 标的 | 代码 | 类型 | 持有资产 | 持仓成本 | 持有收益 | 收益率 |\n")
-        f.write("|------|------|------|----------|----------|----------|--------|\n")
-
-        for r in results:
-            name = r['名称']
-            code = r['代码']
-            asset = r.get('当前市值', 0)
-            cost = r.get('持仓成本', 0)
-            profit = r.get('浮动盈亏', 0)
-            profit_pct = r.get('收益率', 0)
-
-            # 确定类型
-            holding_type = HOLDINGS[name].get('type', 'unknown')
-            type_map = {'etf': 'ETF', 'index': '指数', 'stock': '股票', 'fund': '基金'}
-            type_name = type_map.get(holding_type, holding_type.upper())
-
-            # 格式化代码
-            if code.startswith('sh'):
-                code_display = code[2:] + '.SH'
-            elif code.startswith('sz'):
-                code_display = code[2:] + '.SZ'
-            else:
-                code_display = code
-
-            # 格式化数字
-            asset_str = f"{asset:,.2f}"
-            cost_str = f"{cost:,.2f}"
-            profit_sign = '+' if profit >= 0 else ''
-            profit_str = f"{profit_sign}{profit:.2f}"
-            profit_pct_sign = '+' if profit_pct >= 0 else ''
-            profit_pct_str = f"{profit_pct_sign}{profit_pct:.2f}%"
-
-            f.write(f"| {name} | {code_display} | {type_name} | {asset_str} | {cost_str} | {profit_str} | {profit_pct_str} |\n")
-
-        f.write("\n## 汇总\n\n")
-        f.write(f"- 总资产: {total_asset:,.2f} 元\n")
-        f.write(f"- 总成本: {total_cost:,.2f} 元\n")
-        profit_sign = '+' if total_profit >= 0 else ''
-        f.write(f"- 总收益: {profit_sign}{total_profit:.2f} 元\n")
-        profit_pct_sign = '+' if total_profit_pct >= 0 else ''
-        f.write(f"- 总收益率: {profit_pct_sign}{total_profit_pct:.2f}%\n")
-
-    print(f"持仓清单已更新到 {holding_file}")
 
 
 if __name__ == '__main__':

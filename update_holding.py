@@ -9,6 +9,23 @@ import re
 import csv
 from datetime import datetime
 
+LAST_CASH_FILE = os.path.join(os.path.dirname(__file__), '.last_cash.txt')
+
+
+def load_last_cash():
+    if os.path.exists(LAST_CASH_FILE):
+        try:
+            with open(LAST_CASH_FILE) as f:
+                return float(f.read().strip())
+        except:
+            pass
+    return 0
+
+
+def save_last_cash(cash):
+    with open(LAST_CASH_FILE, 'w') as f:
+        f.write(str(cash))
+
 
 def parse_holding_input():
     """解析 holding_input.txt 中的持仓数据"""
@@ -140,13 +157,15 @@ def main():
         print(f"  - {h['name']}: {h['amount']:.2f} 元")
 
     # 询问现金余额
+    last_cash = load_last_cash()
+    prompt = f"\n请输入现金余额 (上次: {last_cash:.0f} 元，直接回车使用上次值): "
     try:
-        cash_input = input("\n请输入现金余额 (直接回车跳过): ").strip()
-        cash = float(cash_input) if cash_input else 0
+        cash_input = input(prompt).strip()
+        cash = float(cash_input) if cash_input else last_cash
     except EOFError:
-        # 非交互模式，默认现金为 0
-        cash = 0
-        print("\n现金余额: 0.00 元 (非交互模式)")
+        cash = last_cash
+        print(f"\n现金余额: {last_cash:.0f} 元 (非交互模式，使用上次记录)")
+    save_last_cash(cash)
 
     # 更新 holding.md
     update_holding_md(holdings, cash)
