@@ -71,6 +71,14 @@ HOLDINGS = {
         'index_code': '931250',
         'note': '中证港股通创新药指数ETF'
     },
+    '标普500LOF': {
+        'code': 'sz161125',
+        'sina_code': 'sz161125',
+        'market': 'a_sina',
+        'type': 'lof',
+        'hist_code': 'sz161125',
+        'note': '易方达标普500指数LOF（观察仓，未实际持有）'
+    },
 }
 
 
