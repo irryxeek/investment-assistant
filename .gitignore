@@ -2,3 +2,9 @@ venv/
 *.log
 __pycache__/
 *.pyc
+
+# 个人持仓数据（不上传远程）
+holding.md
+holding_input.txt
+trade_history.md
+.last_cash.txt
