@@ -39,28 +39,32 @@ HOLDINGS = {
         'sina_code': 'sh518880',
         'market': 'a_sina',
         'type': 'etf',
-        'hist_code': 'sh518880'
+        'hist_code': 'sh518880',
+        'display_name': '黄金ETF联接C',
     },
     '中证A500': {
         'code': 'sh000510',
         'sina_code': 'sh000510',
         'market': 'index_sina',
         'type': 'index',
-        'hist_code': 'sh000510'
+        'hist_code': 'sh000510',
+        'display_name': 'A500指数增强C',
     },
     '红利低波50ETF': {
         'code': 'sh515450',
         'sina_code': 'sh515450',
         'market': 'a_sina',
         'type': 'etf',
-        'hist_code': 'sh515450'
+        'hist_code': 'sh515450',
+        'display_name': '红利低波50联接A',
     },
     '恒生科技指数': {
         'code': 'HSTECH',
         'sina_code': 'HSTECH',
         'market': 'index_hk',
         'type': 'index',
-        'hist_code': 'HSTECH'  # 用 akshare
+        'hist_code': 'HSTECH',  # 用 akshare
+        'display_name': '恒生科技联接C',
     },
     '港股通创新药ETF': {
         'code': 'sh513120',
@@ -69,7 +73,8 @@ HOLDINGS = {
         'type': 'etf',
         'hist_code': 'sh513120',
         'index_code': '931250',
-        'note': '中证港股通创新药指数ETF'
+        'note': '中证港股通创新药指数ETF',
+        'display_name': '创新药联接C',
     },
     '标普500LOF': {
         'code': 'sz161125',
@@ -77,7 +82,8 @@ HOLDINGS = {
         'market': 'a_sina',
         'type': 'lof',
         'hist_code': 'sz161125',
-        'note': '易方达标普500指数LOF（观察仓，未实际持有）'
+        'note': '易方达标普500指数LOF（观察仓，未实际持有）',
+        'display_name': '标普500LOF（观察）',
     },
 }
 
@@ -207,25 +213,25 @@ def fetch_hist_data(info):
         if hist_code == 'HSTECH':
             df = ak.stock_hk_index_daily_sina(symbol='HSTECH')
             df = df.rename(columns={'date': '日期', 'close': '收盘', 'high': '最高', 'low': '最低', 'volume': '成交量'})
-            return df.tail(60)
+            return df.tail(80)
 
         # 中证指数用官网API
         if info.get('market') == 'index_csindex':
             from datetime import datetime, timedelta
             end_date = datetime.now().strftime('%Y%m%d')
-            start_date = (datetime.now() - timedelta(days=120)).strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=150)).strftime('%Y%m%d')
             url = f'https://www.csindex.com.cn/csindex-home/perf/index-perf?indexCode={hist_code}&startDate={start_date}&endDate={end_date}'
             resp = session.get(url, timeout=10)
             data = resp.json().get('data', [])
             if data:
                 df = pd.DataFrame(data)
                 df = df.rename(columns={'tradeDate': '日期', 'close': '收盘', 'high': '最高', 'low': '最低', 'tradingVol': '成交量'})
-                return df.tail(60)
+                return df.tail(80)
             return None
 
         # 其他用新浪K线接口
         url = f'https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_{hist_code}=/CN_MarketDataService.getKLineData'
-        params = {'symbol': hist_code, 'scale': '240', 'ma': 'no', 'datalen': 60}
+        params = {'symbol': hist_code, 'scale': '240', 'ma': 'no', 'datalen': 80}
         headers = {'Referer': 'https://finance.sina.com.cn'}
         resp = session.get(url, params=params, headers=headers, timeout=10)
         text = resp.text
@@ -257,6 +263,7 @@ def calc_technical_indicators(df):
         ma5 = close.rolling(5).mean().iloc[-1]
         ma10 = close.rolling(10).mean().iloc[-1]
         ma20 = close.rolling(20).mean().iloc[-1]
+        ma60 = close.rolling(60).mean().iloc[-1] if len(close) >= 60 else None
 
         # RSI
         delta = close.diff()
@@ -276,6 +283,10 @@ def calc_technical_indicators(df):
         current = close.iloc[-1]
         position_20 = (current - low_20) / (high_20 - low_20) * 100 if high_20 != low_20 else 50
 
+        high_60 = high.tail(60).max() if len(high) >= 60 else high.max()
+        low_60 = low.tail(60).min() if len(low) >= 60 else low.min()
+        position_60 = (current - low_60) / (high_60 - low_60) * 100 if high_60 != low_60 else 50
+
         # 近期表现
         change_5d = (current / close.iloc[-6] - 1) * 100 if len(close) >= 6 else 0
         change_20d = (current / close.iloc[-21] - 1) * 100 if len(close) >= 21 else 0
@@ -284,12 +295,16 @@ def calc_technical_indicators(df):
             'MA5': round(ma5, 2),
             'MA10': round(ma10, 2),
             'MA20': round(ma20, 2),
+            'MA60': round(ma60, 2) if ma60 is not None else None,
             'RSI': round(rsi, 2),
             'MACD': round(macd, 4),
             'Signal': round(signal, 4),
             '20日高点': round(high_20, 2),
             '20日低点': round(low_20, 2),
             '区间位置': round(position_20, 1),
+            '60日高点': round(high_60, 2),
+            '60日低点': round(low_60, 2),
+            '60日区间位置': round(position_60, 1),
             '近5日涨跌': round(change_5d, 2),
             '近20日涨跌': round(change_20d, 2),
         }
@@ -376,8 +391,9 @@ def main():
         tech = calc_technical_indicators(hist_df)
 
         # 合并数据
+        display_name = info.get('display_name', name)
         result = {
-            '名称': name,
+            '名称': display_name,
             '代码': code,
             '时间': report_time,
             **quote,
@@ -393,9 +409,10 @@ def main():
         print(f"  今日: 开{quote.get('今开', 0):.4f} 高{quote.get('最高', 0):.4f} 低{quote.get('最低', 0):.4f}")
 
         if tech:
-            print(f"  均线: MA5={tech.get('MA5', '-')} MA10={tech.get('MA10', '-')} MA20={tech.get('MA20', '-')}")
+            print(f"  均线: MA5={tech.get('MA5', '-')} MA10={tech.get('MA10', '-')} MA20={tech.get('MA20', '-')} MA60={tech.get('MA60', '-')}")
             print(f"  动量: RSI={tech.get('RSI', '-')} MACD={tech.get('MACD', '-')}")
             print(f"  位置: 20日区间 {tech.get('区间位置', '-')}% (低{tech.get('20日低点', '-')} ~ 高{tech.get('20日高点', '-')})")
+            print(f"  位置: 60日区间 {tech.get('60日区间位置', '-')}% (低{tech.get('60日低点', '-')} ~ 高{tech.get('60日高点', '-')})")
             print(f"  表现: 近5日 {tech.get('近5日涨跌', '-')}% | 近20日 {tech.get('近20日涨跌', '-')}%")
 
     print("\n" + "-" * 70)
@@ -463,13 +480,13 @@ def main():
             f.write(f"| {name} | {data['价格']:.2f} | {sign}{data['涨跌幅']}% |\n")
 
         f.write("\n## 持仓详情\n\n")
-        f.write("| 标的 | 最新价 | 今日涨跌 | RSI | 20日位置 | 近5日 | 近20日 |\n")
-        f.write("|------|--------|----------|-----|----------|-------|--------|\n")
+        f.write("| 标的 | 最新价 | 今日涨跌 | RSI | MA60 | 20日位置 | 60日位置 | 近5日 | 近20日 |\n")
+        f.write("|------|--------|----------|-----|------|----------|----------|-------|--------|\n")
         for r in results:
             sign = '+' if r['涨跌幅'] >= 0 else ''
             sign5 = '+' if r.get('近5日涨跌', 0) >= 0 else ''
             sign20 = '+' if r.get('近20日涨跌', 0) >= 0 else ''
-            f.write(f"| {r['名称']} | {r['最新价']:.4f} | {sign}{r['涨跌幅']}% | {r.get('RSI', '-')} | {r.get('区间位置', '-')}% | {sign5}{r.get('近5日涨跌', '-')}% | {sign20}{r.get('近20日涨跌', '-')}% |\n")
+            f.write(f"| {r['名称']} | {r['最新价']:.4f} | {sign}{r['涨跌幅']}% | {r.get('RSI', '-')} | {r.get('MA60', '-')} | {r.get('区间位置', '-')}% | {r.get('60日区间位置', '-')}% | {sign5}{r.get('近5日涨跌', '-')}% | {sign20}{r.get('近20日涨跌', '-')}% |\n")
 
         f.write("\n## 技术信号\n\n")
         for r in results:
@@ -489,6 +506,16 @@ def main():
                     signals.append("多头排列")
                 elif r['最新价'] < r['MA5'] < r['MA20']:
                     signals.append("空头排列")
+            if r.get('MA60'):
+                if r['最新价'] > r['MA60']:
+                    signals.append("站上MA60")
+                else:
+                    signals.append("跌破MA60")
+            if r.get('60日区间位置') is not None:
+                if r['60日区间位置'] < 20:
+                    signals.append("接近60日低点")
+                elif r['60日区间位置'] > 80:
+                    signals.append("接近60日高点")
 
             if signals:
                 f.write(f"- **{r['名称']}**: {', '.join(signals)}\n")

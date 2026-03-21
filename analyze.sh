@@ -7,6 +7,49 @@ cd "$SCRIPT_DIR"
 echo "提示: 请确保已运行 update_holding.py 更新持仓数据"
 echo ""
 
+# 优先使用用户全局 npm 的 claude（已验证为新版），避免命中旧的 Homebrew 路径
+if [ -x "$HOME/.npm-global/bin/claude" ]; then
+	CLAUDE_BIN="$HOME/.npm-global/bin/claude"
+else
+	CLAUDE_BIN="$(command -v claude)"
+fi
+
+if [ -z "$CLAUDE_BIN" ] || [ ! -x "$CLAUDE_BIN" ]; then
+	echo "未找到可用的 Claude Code CLI，请先安装 @anthropic-ai/claude-code"
+	exit 1
+fi
+
+# 版本比较：返回 0 表示 $1 >= $2
+version_ge() {
+	local i
+	local IFS=.
+	local v1=($1)
+	local v2=($2)
+	for ((i=${#v1[@]}; i<${#v2[@]}; i++)); do
+		v1[i]=0
+	done
+	for ((i=0; i<${#v1[@]}; i++)); do
+		if [ -z "${v2[i]}" ]; then
+			v2[i]=0
+		fi
+		if ((10#${v1[i]} > 10#${v2[i]})); then
+			return 0
+		fi
+		if ((10#${v1[i]} < 10#${v2[i]})); then
+			return 1
+		fi
+	done
+	return 0
+}
+
+CLAUDE_VERSION="$($CLAUDE_BIN --version 2>/dev/null | awk '{print $1}')"
+MIN_VERSION="2.1.78"
+if ! version_ge "$CLAUDE_VERSION" "$MIN_VERSION"; then
+	echo "Claude Code 版本过低: $CLAUDE_VERSION（需要 >= $MIN_VERSION）"
+	echo "请升级: npm install -g @anthropic-ai/claude-code@latest"
+	exit 1
+fi
+
 # 先抓取大盘行情数据（仅供参考）
 "$SCRIPT_DIR/venv/bin/python3" fetch_market_data.py || { echo "行情数据抓取失败，请检查网络或脚本"; exit 1; }
 
@@ -33,4 +76,4 @@ $(cat latest_summary.md)
 
 # 使用交互式模式调用 driven skill
 # 通过 printf 发送 /driven 命令和分析数据
-printf "/driven\n%s\n" "$ANALYSIS_PROMPT" | /opt/homebrew/bin/claude --model claude-sonnet-4-6
+printf "/driven\n%s\n" "$ANALYSIS_PROMPT" | "$CLAUDE_BIN" --model claude-sonnet-4-6

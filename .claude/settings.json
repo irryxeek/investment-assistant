@@ -1,9 +1,0 @@
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "https://www.78code.cc/",
-    "ANTHROPIC_AUTH_TOKEN": "sk-xeDOOKPC5QuPubbGLCKwgj850zZ2LlyHOALYIfJumE38syFN"
-  },
-  "permissions": {
-    "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)"]
-  }
-}

@@ -103,8 +103,8 @@ def update_holding_md(holdings, cash=0):
 
     with open(holding_file, 'w', encoding='utf-8') as f:
         f.write("# 持仓清单\n\n")
-        f.write("| 标的 | 代码 | 类型 | 持有资产 | 持仓成本 | 持有收益 | 收益率 | 昨日收益 |\n")
-        f.write("|------|------|------|----------|----------|----------|--------|----------|\n")
+        f.write("| 标的 | 代码 | 类型 | 持有资产 | 占比 | 持仓成本 | 持有收益 | 收益率 | 昨日收益 |\n")
+        f.write("|------|------|------|----------|------|----------|----------|--------|----------|\n")
 
         for h in holdings:
             name = h['name']
@@ -114,16 +114,17 @@ def update_holding_md(holdings, cash=0):
             daily = h['daily']
             cost = amount - profit
             return_pct = (profit / cost * 100) if cost else 0
+            weight = (amount / total_amount * 100) if total_amount else 0
 
             profit_sign = '+' if profit >= 0 else ''
             return_sign = '+' if return_pct >= 0 else ''
             daily_sign = '+' if daily >= 0 else ''
 
-            f.write(f"| {name} | {code} | 基金 | {amount:,.2f} | {cost:,.2f} | {profit_sign}{profit:.2f} | {return_sign}{return_pct:.2f}% | {daily_sign}{daily:.2f} |\n")
+            f.write(f"| {name} | {code} | 基金 | {amount:,.2f} | {weight:.1f}% | {cost:,.2f} | {profit_sign}{profit:.2f} | {return_sign}{return_pct:.2f}% | {daily_sign}{daily:.2f} |\n")
 
-        # 现金行
-        if cash > 0:
-            f.write(f"| 现金 | CASH | 现金 | {cash:,.2f} | {cash:,.2f} | 0.00 | 0.00% | 0.00 |\n")
+        # 现金行（始终显示）
+        cash_weight = (cash / total_amount * 100) if total_amount else 0
+        f.write(f"| 现金 | CASH | 现金 | {cash:,.2f} | {cash_weight:.1f}% | {cash:,.2f} | 0.00 | 0.00% | 0.00 |\n")
 
         f.write("\n## 汇总\n\n")
         f.write(f"- 总资产: {total_amount:,.2f} 元\n")
