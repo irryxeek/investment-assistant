@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 import os
+import sys
 import requests
 import json
 
@@ -132,6 +133,7 @@ def fetch_sina_quote(code):
             '成交量': volume,
         }
     except Exception as e:
+        print(f"[warn] fetch_sina_quote({code}) failed: {e}", file=sys.stderr)
         return None
 
 
@@ -152,7 +154,8 @@ def fetch_index_hk(code):
             '昨收': float(r.get('昨收', 0)),
             '成交量': 0,
         }
-    except:
+    except Exception as e:
+        print(f"[warn] fetch_index_hk({code}) failed: {e}", file=sys.stderr)
         return None
 
 
@@ -175,8 +178,8 @@ def fetch_index_csindex(code):
                 '昨收': d.get('close', 0) - d.get('change', 0),
                 '成交量': d.get('tradingVol', 0),
             }
-    except:
-        pass
+    except Exception as e:
+        print(f"[warn] fetch_index_csindex({code}) failed: {e}", file=sys.stderr)
     return None
 
 
@@ -197,8 +200,8 @@ def fetch_index_em(secid):
                 '昨收': data.get('f60', 0) / 100,
                 '成交量': data.get('f47', 0),
             }
-    except:
-        pass
+    except Exception as e:
+        print(f"[warn] fetch_index_em({secid}) failed: {e}", file=sys.stderr)
     return None
 
 
@@ -246,6 +249,7 @@ def fetch_hist_data(info):
         return df
 
     except Exception as e:
+        print(f"[warn] fetch_hist_data({hist_code}) failed: {e}", file=sys.stderr)
         return None
 
 
@@ -309,6 +313,7 @@ def calc_technical_indicators(df):
             '近20日涨跌': round(change_20d, 2),
         }
     except Exception as e:
+        print(f"[warn] calc_technical_indicators failed: {e}", file=sys.stderr)
         return {}
 
 
@@ -322,8 +327,8 @@ def get_market_overview():
         resp.encoding = 'gbk'
         data = resp.text.split('="')[1].rstrip('";').split(',')
         overview['上证指数'] = {'价格': float(data[3]), '涨跌幅': round((float(data[3])/float(data[2])-1)*100, 2)}
-    except:
-        pass
+    except Exception as e:
+        print(f"[warn] 上证指数获取失败: {e}", file=sys.stderr)
 
     try:
         # 深证成指
@@ -332,16 +337,16 @@ def get_market_overview():
         resp.encoding = 'gbk'
         data = resp.text.split('="')[1].rstrip('";').split(',')
         overview['深证成指'] = {'价格': float(data[3]), '涨跌幅': round((float(data[3])/float(data[2])-1)*100, 2)}
-    except:
-        pass
+    except Exception as e:
+        print(f"[warn] 深证成指获取失败: {e}", file=sys.stderr)
 
     try:
         # 恒生指数
         df = ak.stock_hk_index_spot_sina()
         hsi = df[df['代码'] == 'HSI'].iloc[0]
         overview['恒生指数'] = {'价格': float(hsi['最新价']), '涨跌幅': float(hsi['涨跌幅'])}
-    except:
-        pass
+    except Exception as e:
+        print(f"[warn] 恒生指数获取失败: {e}", file=sys.stderr)
 
     return overview
 
@@ -427,7 +432,8 @@ def main():
             try:
                 with open(json_path, 'r', encoding='utf-8') as f:
                     existing = json.load(f)
-            except:
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"[warn] 读取 market_data.json 失败，重新创建: {e}", file=sys.stderr)
                 existing = []
 
         # 追加新数据
@@ -439,27 +445,25 @@ def main():
 
         # 清理历史数据：非当日数据只保留每天最后一条
         today = now.date()
-        cleaned = []
+        today_records = []
         daily_records = {}
 
         for record in existing:
             record_time = datetime.strptime(record['timestamp'], '%Y-%m-%d %H:%M:%S')
             record_date = record_time.date()
 
-            # 当日数据全部保留
             if record_date == today:
-                cleaned.append(record)
+                today_records.append(record)
             else:
-                # 非当日数据：只保留每天最后一条（收盘数据）
                 if record_date not in daily_records or record_time > datetime.strptime(daily_records[record_date]['timestamp'], '%Y-%m-%d %H:%M:%S'):
                     daily_records[record_date] = record
 
-        # 合并历史数据（按日期排序）
-        for date in sorted(daily_records.keys()):
-            cleaned.insert(0, daily_records[date])
+        # 合并：历史（按日期排序）+ 当日
+        all_records = [daily_records[d] for d in sorted(daily_records.keys())]
+        all_records.extend(today_records)
 
-        # 只保留最近30天
-        existing = cleaned[-30:]
+        # 只保留最近30条
+        existing = all_records[-30:]
 
         with open(json_path, 'w', encoding='utf-8') as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)

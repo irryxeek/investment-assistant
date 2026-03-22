@@ -51,7 +51,7 @@ if ! version_ge "$CLAUDE_VERSION" "$MIN_VERSION"; then
 fi
 
 # 先抓取大盘行情数据（仅供参考）
-"$SCRIPT_DIR/venv/bin/python3" fetch_market_data.py || { echo "行情数据抓取失败，请检查网络或脚本"; exit 1; }
+"$SCRIPT_DIR/venv/bin/python3" fetch_market_data.py || echo "警告: 行情数据抓取失败，将使用上次缓存的数据继续分析"
 
 # 准备分析数据
 ANALYSIS_PROMPT="请根据以下数据分析我的持仓表现，并给出具体操作建议：
@@ -74,6 +74,9 @@ $(cat latest_summary.md)
 
 请直接给出结论和操作建议，不需要解释基础概念。"
 
-# 使用交互式模式调用 driven skill
-# 通过 printf 发送 /driven 命令和分析数据
-printf "/driven\n%s\n" "$ANALYSIS_PROMPT" | "$CLAUDE_BIN" --model claude-sonnet-4-6
+# 使用 Claude 订阅（清除 API 代理环境变量，走 OAuth 认证）
+unset ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
+# /driven 必须作为命令行参数传入，不能放在 stdin/heredoc 中
+"$CLAUDE_BIN" --model claude-opus-4-6 /driven <<EOF
+$ANALYSIS_PROMPT
+EOF

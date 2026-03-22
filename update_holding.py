@@ -17,8 +17,8 @@ def load_last_cash():
         try:
             with open(LAST_CASH_FILE) as f:
                 return float(f.read().strip())
-        except:
-            pass
+        except (ValueError, IOError) as e:
+            print(f"警告: 读取上次现金记录失败: {e}")
     return 0
 
 
@@ -78,7 +78,7 @@ def get_fund_code(name):
     mapping = {
         '易方达恒生科技': '007373',
         '景顺长城中证港股通创新药': '014424',
-        '富国中证 A500': '021163',
+        '富国中证A500': '021163',
         '南方红利低波': '008736',
         '国泰黄金': '004253',
     }

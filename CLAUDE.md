@@ -9,19 +9,19 @@
 ## 环境
 - Python 虚拟环境: `venv/bin/python3`（直接用绝对路径，不依赖 activate）
 - 金融数据: akshare + 新浪实时行情 API（仅供参考）
-- AI 模型: claude-sonnet-4-6
+- AI 模型: claude-opus-4-6
 
 ## 项目结构
 ```
 ├── update_holding.py      # 手动更新持仓数据工具（主要）
 ├── holding_input.txt      # 持仓数据输入文件（从支付宝复制）
 ├── fetch_market_data.py   # 市场行情抓取（仅供参考，不更新持仓）
-├── analyze.sh             # 工作流调度（更新持仓 → 调用 Claude 分析）
+├── analyze.sh             # 工作流调度（抓行情 → 调用 Claude 分析）
 ├── holding.md             # 持仓清单（由 update_holding.py 自动生成）
 ├── trade_history.md       # 投资操作记录（手动维护）
 ├── market_data.json       # 市场行情数据（自动生成，保留最近30天）
 ├── latest_summary.md      # 最新行情摘要（自动生成）
-└── Analyze.app (桌面)     # macOS 快捷启动入口
+└── CLAUDE.md              # 项目说明
 ```
 
 ## 实际持仓（联接基金）

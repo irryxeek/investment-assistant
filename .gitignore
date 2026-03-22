@@ -8,3 +8,8 @@ holding.md
 holding_input.txt
 trade_history.md
 .last_cash.txt
+claude_model_setting.txt
+
+# 自动生成的行情数据
+market_data.json
+latest_summary.md
