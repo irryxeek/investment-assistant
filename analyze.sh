@@ -53,8 +53,8 @@ fi
 # 先抓取大盘行情数据（仅供参考）
 "$SCRIPT_DIR/venv/bin/python3" fetch_market_data.py || echo "警告: 行情数据抓取失败，将使用上次缓存的数据继续分析"
 
-# 准备分析数据
-ANALYSIS_PROMPT="请根据以下数据分析我的持仓表现，并给出具体操作建议：
+# 准备分析数据（分析框架由 /driven skill 定义，这里只传递数据）
+ANALYSIS_PROMPT="请根据以下数据分析我的持仓并给出操作建议：
 
 ## 我的持仓
 $(cat holding.md)
@@ -63,16 +63,7 @@ $(cat holding.md)
 $(cat trade_history.md)
 
 ## 今日行情摘要
-$(cat latest_summary.md)
-
-## 分析要求
-1. 结合技术指标（RSI、MACD、均线、20日区间位置）评估每个持仓的短期走势
-2. 根据我的持仓成本和当前收益率，判断是否需要调仓
-3. 给出当日具体操作建议：加仓/减仓/持有，以及建议的仓位比例
-4. 如有异常信号（超买超卖、接近高低点），重点提示
-5. 针对现金，给出配置建议
-
-请直接给出结论和操作建议，不需要解释基础概念。"
+$(cat latest_summary.md)"
 
 # 使用 Claude 订阅（清除 API 代理环境变量，走 OAuth 认证）
 unset ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
