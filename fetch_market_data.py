@@ -33,60 +33,47 @@ session = requests.Session()
 session.trust_env = False
 session.proxies = {'http': None, 'https': None}
 
-# 持仓清单
-HOLDINGS = {
-    '黄金ETF': {
-        'code': 'sh518880',
-        'sina_code': 'sh518880',
-        'market': 'a_sina',
-        'type': 'etf',
-        'hist_code': 'sh518880',
-        'display_name': '黄金ETF联接C',
-    },
-    '中证A500': {
-        'code': 'sh000510',
-        'sina_code': 'sh000510',
-        'market': 'index_sina',
-        'type': 'index',
-        'hist_code': 'sh000510',
-        'display_name': 'A500指数增强C',
-    },
-    '红利低波50ETF': {
-        'code': 'sh515450',
-        'sina_code': 'sh515450',
-        'market': 'a_sina',
-        'type': 'etf',
-        'hist_code': 'sh515450',
-        'display_name': '红利低波50联接A',
-    },
-    '恒生科技指数': {
-        'code': 'HSTECH',
-        'sina_code': 'HSTECH',
-        'market': 'index_hk',
-        'type': 'index',
-        'hist_code': 'HSTECH',  # 用 akshare
-        'display_name': '恒生科技联接C',
-    },
-    '港股通创新药ETF': {
-        'code': 'sh513120',
-        'sina_code': 'sh513120',
-        'market': 'a_sina',
-        'type': 'etf',
-        'hist_code': 'sh513120',
-        'index_code': '931250',
-        'note': '中证港股通创新药指数ETF',
-        'display_name': '创新药联接C',
-    },
-    '标普500LOF': {
-        'code': 'sz161125',
-        'sina_code': 'sz161125',
-        'market': 'a_sina',
-        'type': 'lof',
-        'hist_code': 'sz161125',
-        'note': '易方达标普500指数LOF（观察仓，未实际持有）',
-        'display_name': '标普500LOF（观察）',
-    },
-}
+def load_config():
+    """从 config.json 加载持仓配置"""
+    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    if not os.path.exists(config_path):
+        print(f"错误: 找不到 {config_path}")
+        print("请运行 ./setup.sh 或复制 config.example.json 为 config.json")
+        sys.exit(1)
+
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+
+    holdings = {}
+    valuation_map = {}
+
+    for item in config.get('funds', []) + config.get('watchlist', []):
+        tracking = item.get('tracking', {})
+        display_name = item['display_name']
+        key = display_name
+
+        code = tracking.get('code', '')
+        market = tracking.get('market', 'a_sina')
+        holdings[key] = {
+            'code': code,
+            'sina_code': code,
+            'market': market,
+            'type': tracking.get('type', 'index' if market == 'index_hk' else 'etf'),
+            'hist_code': tracking.get('hist_code', code),
+            'display_name': display_name,
+        }
+
+        valuation = item.get('valuation')
+        if valuation:
+            if valuation.get('source') == 'csindex':
+                valuation_map[key] = valuation['code']
+            elif valuation.get('source') == 'multpl':
+                valuation_map[key] = 'multpl'
+
+    return holdings, valuation_map
+
+
+HOLDINGS, VALUATION_MAP = load_config()
 
 
 def fetch_sina_quote(code):
@@ -351,6 +338,104 @@ def get_market_overview():
     return overview
 
 
+def fetch_sp500_valuation():
+    """从 multpl.com 获取标普500估值数据"""
+    import re
+    result = {}
+    urls = {
+        'PE': ('https://www.multpl.com/s-p-500-pe-ratio', r'Current S&P 500 PE Ratio is ([\d.]+)'),
+        '股息率': ('https://www.multpl.com/s-p-500-dividend-yield', r'Current S&P 500 Dividend Yield is ([\d.]+)%'),
+        'Shiller_PE': ('https://www.multpl.com/shiller-pe', r'Current Shiller PE Ratio is ([\d.]+)'),
+    }
+    for key, (url, pattern) in urls.items():
+        try:
+            resp = session.get(url, timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+            match = re.search(pattern, resp.text)
+            if match:
+                result[key] = float(match.group(1))
+        except Exception as e:
+            print(f"[warn] fetch_sp500_valuation({key}) failed: {e}", file=sys.stderr)
+    return result
+
+
+def fetch_valuation_data():
+    """获取指数估值数据（PE、股息率）"""
+    valuations = {}
+    for name, source_code in VALUATION_MAP.items():
+        if source_code == 'multpl':
+            # 标普500估值（multpl.com）
+            try:
+                sp500 = fetch_sp500_valuation()
+                if sp500.get('PE'):
+                    valuations[name] = {
+                        '日期': datetime.now().strftime('%Y-%m-%d'),
+                        '指数名称': '标普500',
+                        'PE_TTM': sp500['PE'],
+                        'PE_静态': sp500.get('Shiller_PE', 0),
+                        '股息率': sp500.get('股息率', 0),
+                    }
+            except Exception as e:
+                print(f"[warn] fetch_sp500_valuation failed: {e}", file=sys.stderr)
+        else:
+            # 中证指数官网
+            try:
+                df = ak.stock_zh_index_value_csindex(symbol=source_code)
+                if df is not None and not df.empty:
+                    row = df.iloc[0]
+                    valuations[name] = {
+                        '日期': str(row['日期']),
+                        '指数名称': row.get('指数中文简称', name),
+                        'PE_TTM': round(float(row['市盈率1']), 2),
+                        'PE_静态': round(float(row['市盈率2']), 2),
+                        '股息率': round(float(row['股息率1']), 2),
+                    }
+            except Exception as e:
+                print(f"[warn] fetch_valuation({name}/{source_code}) failed: {e}", file=sys.stderr)
+
+    return valuations
+
+
+def fetch_capital_flows():
+    """获取资金面数据：主力资金流向 + 北向南向资金"""
+    capital = {}
+
+    # A股主力资金流向
+    try:
+        df = ak.stock_market_fund_flow()
+        if df is not None and not df.empty:
+            recent = df.tail(5).copy()
+            records = []
+            for _, row in recent.iterrows():
+                records.append({
+                    '日期': str(row['日期']).split(' ')[0],
+                    '主力净流入': round(float(row['主力净流入-净额']) / 1e8, 2),
+                    '主力净占比': round(float(row['主力净流入-净占比']), 2),
+                    '超大单净流入': round(float(row['超大单净流入-净额']) / 1e8, 2),
+                    '上证涨跌幅': round(float(row['上证-涨跌幅']), 2),
+                })
+            capital['主力资金'] = records
+    except Exception as e:
+        print(f"[warn] fetch_capital_flows(主力资金) failed: {e}", file=sys.stderr)
+
+    # 北向/南向资金
+    try:
+        df = ak.stock_hsgt_fund_flow_summary_em()
+        if df is not None and not df.empty:
+            flows = {}
+            for _, row in df.iterrows():
+                key = row['板块']
+                flows[key] = {
+                    '成交净买额': round(float(row['成交净买额']), 2),
+                    '上涨数': int(row['上涨数']),
+                    '下跌数': int(row['下跌数']),
+                }
+            capital['北向南向'] = flows
+    except Exception as e:
+        print(f"[warn] fetch_capital_flows(北向南向) failed: {e}", file=sys.stderr)
+
+    return capital
+
+
 def main():
     now = datetime.now()
     report_time = now.strftime('%Y-%m-%d %H:%M:%S')
@@ -420,6 +505,24 @@ def main():
             print(f"  位置: 60日区间 {tech.get('60日区间位置', '-')}% (低{tech.get('60日低点', '-')} ~ 高{tech.get('60日高点', '-')})")
             print(f"  表现: 近5日 {tech.get('近5日涨跌', '-')}% | 近20日 {tech.get('近20日涨跌', '-')}%")
 
+    # 基本面数据
+    print("\n【基本面估值】")
+    print("-" * 70)
+    valuations = fetch_valuation_data()
+    for name, val in valuations.items():
+        print(f"  {val['指数名称']}: PE(TTM)={val['PE_TTM']} PE(静态)={val['PE_静态']} 股息率={val['股息率']}% (截至{val['日期']})")
+
+    # 资金面数据
+    print("\n【资金面】")
+    print("-" * 70)
+    capital = fetch_capital_flows()
+    if '主力资金' in capital and capital['主力资金']:
+        latest = capital['主力资金'][-1]
+        print(f"  A股主力资金: 净流入 {latest['主力净流入']}亿 (占比{latest['主力净占比']}%)")
+    if '北向南向' in capital:
+        for board, data in capital['北向南向'].items():
+            print(f"  {board}: 净买额 {data['成交净买额']}亿 (涨{data['上涨数']} 跌{data['下跌数']})")
+
     print("\n" + "-" * 70)
 
     # 保存详细数据到 JSON
@@ -440,7 +543,9 @@ def main():
         existing.append({
             'timestamp': report_time,
             'overview': overview,
-            'holdings': results
+            'holdings': results,
+            'valuations': valuations,
+            'capital_flows': capital,
         })
 
         # 清理历史数据：非当日数据只保留每天最后一条
@@ -491,6 +596,40 @@ def main():
             sign5 = '+' if r.get('近5日涨跌', 0) >= 0 else ''
             sign20 = '+' if r.get('近20日涨跌', 0) >= 0 else ''
             f.write(f"| {r['名称']} | {r['最新价']:.4f} | {sign}{r['涨跌幅']}% | {r.get('RSI', '-')} | {r.get('MA60', '-')} | {r.get('区间位置', '-')}% | {r.get('60日区间位置', '-')}% | {sign5}{r.get('近5日涨跌', '-')}% | {sign20}{r.get('近20日涨跌', '-')}% |\n")
+
+        # 基本面估值
+        if valuations:
+            f.write("\n## 基本面估值\n\n")
+            f.write("| 指数 | PE(TTM) | PE(静态) | 股息率 | 数据日期 |\n")
+            f.write("|------|---------|----------|--------|----------|\n")
+            for name, val in valuations.items():
+                display = val['指数名称']
+                pe_static_label = val['PE_静态']
+                if VALUATION_MAP.get(name) == 'multpl':
+                    pe_static_label = f"{val['PE_静态']}(CAPE)"
+                f.write(f"| {display} | {val['PE_TTM']} | {pe_static_label} | {val['股息率']}% | {val['日期']} |\n")
+
+        # 资金面
+        f.write("\n## 资金面\n\n")
+        if '主力资金' in capital and capital['主力资金']:
+            f.write("### A股主力资金（近5日）\n\n")
+            f.write("| 日期 | 主力净流入(亿) | 净占比 | 超大单净流入(亿) | 上证涨跌幅 |\n")
+            f.write("|------|----------------|--------|------------------|------------|\n")
+            for rec in capital['主力资金']:
+                sign_main = '+' if rec['主力净流入'] >= 0 else ''
+                sign_big = '+' if rec['超大单净流入'] >= 0 else ''
+                sign_sh = '+' if rec['上证涨跌幅'] >= 0 else ''
+                f.write(f"| {rec['日期']} | {sign_main}{rec['主力净流入']} | {sign_main}{rec['主力净占比']}% | {sign_big}{rec['超大单净流入']} | {sign_sh}{rec['上证涨跌幅']}% |\n")
+            f.write("\n")
+
+        if '北向南向' in capital:
+            f.write("### 北向/南向资金\n\n")
+            f.write("| 板块 | 成交净买额(亿) | 上涨数 | 下跌数 |\n")
+            f.write("|------|----------------|--------|--------|\n")
+            for board, data in capital['北向南向'].items():
+                sign = '+' if data['成交净买额'] >= 0 else ''
+                f.write(f"| {board} | {sign}{data['成交净买额']} | {data['上涨数']} | {data['下跌数']} |\n")
+            f.write("\n")
 
         f.write("\n## 技术信号\n\n")
         for r in results:

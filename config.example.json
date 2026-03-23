@@ -1,0 +1,83 @@
+{
+  "_说明": "持仓配置文件 — 根据实际持仓修改后保存为 config.json",
+
+  "funds": [
+    {
+      "_说明": "恒生科技联接基金",
+      "name_match": "易方达恒生科技",
+      "fund_code": "007373",
+      "display_name": "恒生科技联接C",
+      "tracking": {
+        "code": "HSTECH",
+        "market": "index_hk",
+        "hist_code": "HSTECH"
+      },
+      "valuation": { "source": "csindex", "code": "931574" }
+    },
+    {
+      "_说明": "港股通创新药联接基金",
+      "name_match": "景顺长城中证港股通创新药",
+      "fund_code": "014424",
+      "display_name": "创新药联接C",
+      "tracking": {
+        "code": "sh513120",
+        "market": "a_sina",
+        "type": "etf",
+        "hist_code": "sh513120"
+      },
+      "valuation": { "source": "csindex", "code": "931250" }
+    },
+    {
+      "_说明": "A500指数增强基金",
+      "name_match": "富国中证A500",
+      "fund_code": "021163",
+      "display_name": "A500指数增强C",
+      "tracking": {
+        "code": "sh000510",
+        "market": "index_sina",
+        "type": "index",
+        "hist_code": "sh000510"
+      },
+      "valuation": { "source": "csindex", "code": "000510" }
+    },
+    {
+      "_说明": "红利低波联接基金",
+      "name_match": "南方红利低波",
+      "fund_code": "008736",
+      "display_name": "红利低波50联接A",
+      "tracking": {
+        "code": "sh515450",
+        "market": "a_sina",
+        "type": "etf",
+        "hist_code": "sh515450"
+      },
+      "valuation": { "source": "csindex", "code": "H30269" }
+    },
+    {
+      "_说明": "黄金ETF联接基金（商品类无PE）",
+      "name_match": "国泰黄金",
+      "fund_code": "004253",
+      "display_name": "黄金ETF联接C",
+      "tracking": {
+        "code": "sh518880",
+        "market": "a_sina",
+        "type": "etf",
+        "hist_code": "sh518880"
+      }
+    }
+  ],
+
+  "watchlist": [
+    {
+      "_说明": "观察仓：未实际持有，仅跟踪行情",
+      "display_name": "标普500LOF（观察）",
+      "tracking": {
+        "code": "sz161125",
+        "market": "a_sina",
+        "type": "lof",
+        "hist_code": "sz161125"
+      },
+      "valuation": { "source": "multpl" }
+    }
+  ]
+}

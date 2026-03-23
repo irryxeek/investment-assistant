@@ -7,6 +7,7 @@
 import os
 import re
 import csv
+import json
 from datetime import datetime
 
 LAST_CASH_FILE = os.path.join(os.path.dirname(__file__), '.last_cash.txt')
@@ -73,20 +74,28 @@ def parse_holding_input():
     return holdings
 
 
-def get_fund_code(name):
-    """根据基金名称返回代码（需要手动维护映射）"""
-    mapping = {
-        '易方达恒生科技': '007373',
-        '景顺长城中证港股通创新药': '014424',
-        '富国中证A500': '021163',
-        '南方红利低波': '008736',
-        '国泰黄金': '004253',
-    }
+def load_fund_code_mapping():
+    """从 config.json 加载基金名称→代码映射"""
+    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    if not os.path.exists(config_path):
+        return {}
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+    mapping = {}
+    for item in config.get('funds', []):
+        if item.get('name_match') and item.get('fund_code'):
+            mapping[item['name_match']] = item['fund_code']
+    return mapping
 
-    for key, code in mapping.items():
+
+_FUND_CODE_MAPPING = load_fund_code_mapping()
+
+
+def get_fund_code(name):
+    """根据基金名称返回代码"""
+    for key, code in _FUND_CODE_MAPPING.items():
         if key in name:
             return code
-
     return 'UNKNOWN'
 
 
