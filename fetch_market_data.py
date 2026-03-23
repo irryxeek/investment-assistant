@@ -18,6 +18,7 @@ import os
 import sys
 import requests
 import json
+import re
 
 os.environ['NO_PROXY'] = '*'
 os.environ['no_proxy'] = '*'
@@ -340,7 +341,6 @@ def get_market_overview():
 
 def fetch_sp500_valuation():
     """从 multpl.com 获取标普500估值数据"""
-    import re
     result = {}
     urls = {
         'PE': ('https://www.multpl.com/s-p-500-pe-ratio', r'Current S&P 500 PE Ratio is ([\d.]+)'),
@@ -395,6 +395,122 @@ def fetch_valuation_data():
     return valuations
 
 
+def fetch_news(max_items=15):
+    """获取财经要闻：新浪7x24 + 财联社双源，去重后返回最新条目"""
+    news_items = []
+    seen_texts = set()
+
+    def _add_item(text, source):
+        text = re.sub(r'<[^>]+>', '', text).strip()
+        if not text or len(text) < 10:
+            return
+        # 用前30字去重
+        key = text[:30]
+        if key in seen_texts:
+            return
+        seen_texts.add(key)
+        news_items.append({'内容': text[:200], '来源': source})
+
+    # 新浪财经 7x24 直播
+    try:
+        resp = session.get(
+            'https://zhibo.sina.com.cn/api/zhibo/feed?page=1&page_size=20&zhibo_id=152&tag_id=0&type=0',
+            timeout=10)
+        feed_list = resp.json().get('result', {}).get('data', {}).get('feed', {}).get('list', [])
+        for item in feed_list:
+            text = item.get('rich_text', '')
+            _add_item(text, '新浪')
+    except Exception as e:
+        print(f"[warn] fetch_news(新浪7x24) failed: {e}", file=sys.stderr)
+
+    # 财联社快讯
+    try:
+        resp = session.get(
+            'https://www.cls.cn/nodeapi/updateTelegraphList?app=CailianpressWeb&os=web&sv=8.4.6&rn=20',
+            timeout=10, headers={'User-Agent': 'Mozilla/5.0'})
+        roll_data = resp.json().get('data', {}).get('roll_data', [])
+        for item in roll_data:
+            text = item.get('content', '')
+            _add_item(text, '财联社')
+    except Exception as e:
+        print(f"[warn] fetch_news(财联社) failed: {e}", file=sys.stderr)
+
+    return news_items[:max_items]
+
+
+def fetch_macro_data():
+    """获取宏观数据：汇率、美元指数、美债收益率、恒生波指"""
+    macro = {}
+    headers = {'Referer': 'https://finance.sina.com.cn'}
+
+    # 离岸人民币 USD/CNH (新浪外汇)
+    # 格式: 时间[0],现价[1],高[2],低[3],...,变动额[11],...
+    try:
+        resp = session.get('https://hq.sinajs.cn/list=fx_susdcnh',
+                          headers=headers, timeout=10)
+        resp.encoding = 'gbk'
+        text = resp.text
+        if '="' in text and '""' not in text:
+            data = text.split('="')[1].rstrip('";').split(',')
+            if len(data) >= 12 and data[1]:
+                current = float(data[1])
+                change_amt = float(data[11]) if data[11] else 0
+                prev_close = current - change_amt if change_amt else None
+                change_pct = round(change_amt / prev_close * 100, 2) if prev_close else None
+                macro['USD/CNH'] = {'最新价': round(current, 4), '涨跌幅': change_pct}
+    except Exception as e:
+        print(f"[warn] fetch_macro(USD/CNH) failed: {e}", file=sys.stderr)
+
+    # 美元指数 DXY (新浪)
+    # 格式: 时间[0],现价[1],...,开盘[7],...
+    try:
+        resp = session.get('https://hq.sinajs.cn/list=DINIW',
+                          headers=headers, timeout=10)
+        resp.encoding = 'gbk'
+        text = resp.text
+        if '="' in text and '""' not in text:
+            data = text.split('="')[1].rstrip('";').split(',')
+            if len(data) >= 8 and data[1]:
+                current = float(data[1])
+                open_price = float(data[7]) if data[7] else None
+                change_pct = round((current / open_price - 1) * 100, 2) if open_price else None
+                macro['美元指数'] = {'最新价': round(current, 2), '涨跌幅': change_pct}
+    except Exception as e:
+        print(f"[warn] fetch_macro(美元指数) failed: {e}", file=sys.stderr)
+
+    # 美债10Y收益率 (akshare)
+    try:
+        start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+        df = ak.bond_zh_us_rate(start_date=start)
+        if df is not None and not df.empty:
+            row = df.iloc[-1]
+            yield_10y = float(row['美国国债收益率10年'])
+            prev_row = df.iloc[-2] if len(df) >= 2 else None
+            change = round(yield_10y - float(prev_row['美国国债收益率10年']), 3) if prev_row is not None else None
+            macro['美债10Y'] = {
+                '最新价': round(yield_10y, 3),
+                '变动': change,
+                '日期': str(row['日期']).split(' ')[0],
+            }
+    except Exception as e:
+        print(f"[warn] fetch_macro(美债10Y) failed: {e}", file=sys.stderr)
+
+    # 恒生波指 VHSI (复用港股指数接口)
+    try:
+        df = ak.stock_hk_index_spot_sina()
+        vhsi = df[df['代码'] == 'VHSI']
+        if not vhsi.empty:
+            row = vhsi.iloc[0]
+            macro['恒生波指'] = {
+                '最新价': round(float(row['最新价']), 2),
+                '涨跌幅': round(float(row['涨跌幅']), 2),
+            }
+    except Exception as e:
+        print(f"[warn] fetch_macro(VHSI) failed: {e}", file=sys.stderr)
+
+    return macro
+
+
 def fetch_capital_flows():
     """获取资金面数据：主力资金流向 + 北向南向资金"""
     capital = {}
@@ -424,12 +540,18 @@ def fetch_capital_flows():
             flows = {}
             for _, row in df.iterrows():
                 key = row['板块']
+                net = round(float(row['成交净买额']), 2)
+                up = int(row['上涨数'])
+                down = int(row['下跌数'])
+                if net == 0:
+                    continue  # 北向数据已停止披露，net=0 为无效数据
                 flows[key] = {
-                    '成交净买额': round(float(row['成交净买额']), 2),
-                    '上涨数': int(row['上涨数']),
-                    '下跌数': int(row['下跌数']),
+                    '成交净买额': net,
+                    '上涨数': up,
+                    '下跌数': down,
                 }
-            capital['北向南向'] = flows
+            if flows:
+                capital['北向南向'] = flows
     except Exception as e:
         print(f"[warn] fetch_capital_flows(北向南向) failed: {e}", file=sys.stderr)
 
@@ -512,6 +634,21 @@ def main():
     for name, val in valuations.items():
         print(f"  {val['指数名称']}: PE(TTM)={val['PE_TTM']} PE(静态)={val['PE_静态']} 股息率={val['股息率']}% (截至{val['日期']})")
 
+    # 宏观数据
+    print("\n【宏观环境】")
+    print("-" * 70)
+    macro = fetch_macro_data()
+    for name, data in macro.items():
+        price = data['最新价']
+        if '涨跌幅' in data and data['涨跌幅'] is not None:
+            sign = '+' if data['涨跌幅'] >= 0 else ''
+            print(f"  {name}: {price} ({sign}{data['涨跌幅']}%)")
+        elif '变动' in data and data['变动'] is not None:
+            sign = '+' if data['变动'] >= 0 else ''
+            print(f"  {name}: {price}% ({sign}{data['变动']}bp) [{data.get('日期', '')}]")
+        else:
+            print(f"  {name}: {price}")
+
     # 资金面数据
     print("\n【资金面】")
     print("-" * 70)
@@ -522,6 +659,13 @@ def main():
     if '北向南向' in capital:
         for board, data in capital['北向南向'].items():
             print(f"  {board}: 净买额 {data['成交净买额']}亿 (涨{data['上涨数']} 跌{data['下跌数']})")
+
+    # 财经要闻
+    print("\n【财经要闻】")
+    print("-" * 70)
+    news = fetch_news()
+    for item in news:
+        print(f"  [{item['来源']}] {item['内容'][:80]}")
 
     print("\n" + "-" * 70)
 
@@ -546,6 +690,8 @@ def main():
             'holdings': results,
             'valuations': valuations,
             'capital_flows': capital,
+            'macro': macro,
+            'news': news,
         })
 
         # 清理历史数据：非当日数据只保留每天最后一条
@@ -588,6 +734,21 @@ def main():
             sign = '+' if data['涨跌幅'] >= 0 else ''
             f.write(f"| {name} | {data['价格']:.2f} | {sign}{data['涨跌幅']}% |\n")
 
+        if macro:
+            f.write("\n## 宏观环境\n\n")
+            f.write("| 指标 | 最新值 | 涨跌 |\n")
+            f.write("|------|--------|------|\n")
+            for name, data in macro.items():
+                price = data['最新价']
+                if '涨跌幅' in data and data['涨跌幅'] is not None:
+                    sign = '+' if data['涨跌幅'] >= 0 else ''
+                    f.write(f"| {name} | {price} | {sign}{data['涨跌幅']}% |\n")
+                elif '变动' in data and data['变动'] is not None:
+                    sign = '+' if data['变动'] >= 0 else ''
+                    f.write(f"| {name} | {price}% | {sign}{data['变动']}bp ({data.get('日期', '')}) |\n")
+                else:
+                    f.write(f"| {name} | {price} | - |\n")
+
         f.write("\n## 持仓详情\n\n")
         f.write("| 标的 | 最新价 | 今日涨跌 | RSI | MA60 | 20日位置 | 60日位置 | 近5日 | 近20日 |\n")
         f.write("|------|--------|----------|-----|------|----------|----------|-------|--------|\n")
@@ -629,6 +790,12 @@ def main():
             for board, data in capital['北向南向'].items():
                 sign = '+' if data['成交净买额'] >= 0 else ''
                 f.write(f"| {board} | {sign}{data['成交净买额']} | {data['上涨数']} | {data['下跌数']} |\n")
+            f.write("\n")
+
+        if news:
+            f.write("## 财经要闻\n\n")
+            for item in news:
+                f.write(f"- [{item['来源']}] {item['内容']}\n")
             f.write("\n")
 
         f.write("\n## 技术信号\n\n")
