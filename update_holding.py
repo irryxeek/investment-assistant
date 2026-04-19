@@ -112,6 +112,7 @@ def update_holding_md(holdings, cash=0):
 
     with open(holding_file, 'w', encoding='utf-8') as f:
         f.write("# 持仓清单\n\n")
+        f.write(f"> 最后更新: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n")
         f.write("| 标的 | 代码 | 类型 | 持有资产 | 占比 | 持仓成本 | 持有收益 | 收益率 | 昨日收益 |\n")
         f.write("|------|------|------|----------|------|----------|----------|--------|----------|\n")
 

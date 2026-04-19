@@ -57,6 +57,7 @@ venv/bin/python3 fetch_market_data.py   # 抓取行情
 ├── trade_history.example.md       # 操作记录格式示例
 ├── market_data.json               # 市场行情数据（自动生成，保留最近30天）
 ├── latest_summary.md              # 最新行情摘要（自动生成）
+├── trading_rules.md               # 交易规则（/driven 强制校验，手动维护）
 └── CLAUDE.md                      # 项目说明
 ```
 
@@ -86,11 +87,21 @@ venv/bin/python3 fetch_market_data.py   # 抓取行情
 | `multpl` | multpl.com（标普500专用） | 不需要 code |
 
 ## 工作流程
-1. **配置持仓**：编辑 `config.json`，定义你的持仓标的和数据源
-2. **更新持仓数据**：从支付宝/天天基金复制数据到 `holding_input.txt`
-3. **运行更新脚本**：`venv/bin/python3 update_holding.py`（输入现金余额）
-4. **抓取行情**：`venv/bin/python3 fetch_market_data.py`
-5. **AI 分析**：`./analyze.sh` 或 `claude /driven` 生成报告
+
+### 日常查看行情（无需更新持仓）
+1. **抓取行情**：`venv/bin/python3 fetch_market_data.py`
+2. **AI 分析**：`./analyze.sh` 或 `claude /driven`
+3. 分析基于 `holding.md`（最后一次交易时的持仓快照）+ 实时行情数据
+4. 持仓品种和成本不会因市场波动改变，`holding.md` 不需要每天更新
+
+### 发生交易时才更新持仓
+1. 从基金平台复制最新数据到 `holding_input.txt`
+2. 运行 `venv/bin/python3 update_holding.py`（输入现金余额）
+3. 在 `trade_history.md` 记录操作
+
+### 首次配置
+1. 编辑 `config.json`，定义持仓标的和数据源
+2. 更新持仓数据（同上）
 
 ## 数据维度
 `fetch_market_data.py` 采集以下数据，输出到 `latest_summary.md`：
@@ -108,9 +119,15 @@ venv/bin/python3 fetch_market_data.py   # 抓取行情
 - 两者存在跟踪误差，分析时需注意
 - 联接基金净值无稳定 API，需手动从基金平台复制
 
+## 交易规则
+- `trading_rules.md` 定义了硬规则（操作前置条件）和软参考（辅助判断）
+- `/driven` 分析时**必须先读取并校验** `trading_rules.md`，硬规则未满足则不推荐操作
+- 修改硬规则需用户明确同意
+
 ## 注意事项
 - **重要**：`holding.md` 由 `update_holding.py` 生成，不要手动编辑
 - **重要**：`fetch_market_data.py` 仅抓取市场行情参考，不会更新 `holding.md`
 - `/driven` skill 必须作为命令行参数：`claude /driven <<EOF`（不能放在 heredoc 内）
 - 新浪 API 需禁用系统代理（脚本已处理）
-- 建议每日收盘后（15:00+）更新持仓数据
+- `holding.md` 仅在发生交易后更新，日常分析无需更新
+- 建议分析频率：每周一次 + 重大事件触发，避免过度交易
