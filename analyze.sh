@@ -68,6 +68,8 @@ $(cat latest_summary.md)"
 # 使用 Claude 订阅（清除 API 代理环境变量，走 OAuth 认证）
 unset ANTHROPIC_AUTH_TOKEN ANTHROPIC_BASE_URL
 # /driven 必须作为命令行参数传入，不能放在 stdin/heredoc 中
-"$CLAUDE_BIN" --model claude-opus-4-6 --allowedTools "WebSearch" /driven <<EOF
+# 注意：非交互模式下 WebSearch 不可用，消息面依赖 fetch_market_data.py 采集的财经要闻
+# 如需联网搜索补充分析，请用交互模式：claude /driven
+"$CLAUDE_BIN" --model claude-opus-4-6 /driven <<EOF
 $ANALYSIS_PROMPT
 EOF
