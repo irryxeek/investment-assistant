@@ -48,6 +48,11 @@ if [ ! -f "trade_history.md" ]; then
     echo "已创建 trade_history.md（请记录实际操作）"
 fi
 
+if [ ! -f "trading_rules.md" ]; then
+    cp trading_rules.example.md trading_rules.md
+    echo "已创建 trading_rules.md（请根据个人风险偏好修改规则阈值）"
+fi
+
 # 设置执行权限
 chmod +x analyze.sh
 

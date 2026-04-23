@@ -8,6 +8,7 @@ config.json
 holding.md
 holding_input.txt
 trade_history.md
+trading_rules.md
 .last_cash.txt
 claude_model_setting.txt
 
