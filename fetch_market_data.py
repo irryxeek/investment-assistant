@@ -19,6 +19,18 @@ import sys
 import requests
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+
+
+def call_with_timeout(func, timeout_sec=15, *args, **kwargs):
+    """给任意函数包装超时，超时返回 None"""
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, *args, **kwargs)
+        try:
+            return future.result(timeout=timeout_sec)
+        except FutureTimeoutError:
+            print(f"[warn] {func.__name__} timeout after {timeout_sec}s", file=sys.stderr)
+            return None
 
 os.environ['NO_PROXY'] = '*'
 os.environ['no_proxy'] = '*'
@@ -478,10 +490,10 @@ def fetch_macro_data():
     except Exception as e:
         print(f"[warn] fetch_macro(美元指数) failed: {e}", file=sys.stderr)
 
-    # 美债10Y收益率 (akshare)
+    # 美债10Y收益率 (akshare，加超时包装避免挂住)
     try:
         start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
-        df = ak.bond_zh_us_rate(start_date=start)
+        df = call_with_timeout(ak.bond_zh_us_rate, 15, start_date=start)
         if df is not None and not df.empty:
             row = df.iloc[-1]
             yield_10y = float(row['美国国债收益率10年'])
@@ -495,16 +507,17 @@ def fetch_macro_data():
     except Exception as e:
         print(f"[warn] fetch_macro(美债10Y) failed: {e}", file=sys.stderr)
 
-    # 恒生波指 VHSI (复用港股指数接口)
+    # 恒生波指 VHSI (复用港股指数接口，加超时包装)
     try:
-        df = ak.stock_hk_index_spot_sina()
-        vhsi = df[df['代码'] == 'VHSI']
-        if not vhsi.empty:
-            row = vhsi.iloc[0]
-            macro['恒生波指'] = {
-                '最新价': round(float(row['最新价']), 2),
-                '涨跌幅': round(float(row['涨跌幅']), 2),
-            }
+        df = call_with_timeout(ak.stock_hk_index_spot_sina, 15)
+        if df is not None and not df.empty:
+            vhsi = df[df['代码'] == 'VHSI']
+            if not vhsi.empty:
+                row = vhsi.iloc[0]
+                macro['恒生波指'] = {
+                    '最新价': round(float(row['最新价']), 2),
+                    '涨跌幅': round(float(row['涨跌幅']), 2),
+                }
     except Exception as e:
         print(f"[warn] fetch_macro(VHSI) failed: {e}", file=sys.stderr)
 
@@ -517,7 +530,7 @@ def fetch_capital_flows():
 
     # A股主力资金流向
     try:
-        df = ak.stock_market_fund_flow()
+        df = call_with_timeout(ak.stock_market_fund_flow, 15)
         if df is not None and not df.empty:
             recent = df.tail(5).copy()
             records = []
@@ -535,7 +548,7 @@ def fetch_capital_flows():
 
     # 北向/南向资金
     try:
-        df = ak.stock_hsgt_fund_flow_summary_em()
+        df = call_with_timeout(ak.stock_hsgt_fund_flow_summary_em, 15)
         if df is not None and not df.empty:
             flows = {}
             for _, row in df.iterrows():
