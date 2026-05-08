@@ -15,3 +15,6 @@ claude_model_setting.txt
 # 自动生成的行情数据
 market_data.json
 latest_summary.md
+
+# 回测报告（含具体持仓数据）
+backtest_report.md
